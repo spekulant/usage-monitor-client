@@ -1,0 +1,60 @@
+variables:
+  DOCKER_DRIVER: overlay
+  GIT_STRATEGY: clone
+  CONTAINER_WEB_IMAGE: $CI_REGISTRY_IMAGE/web:$CI_COMMIT_REF_SLUG
+  CONTAINER_WEB_RELEASE_IMAGE: $CI_REGISTRY_IMAGE/web:latest
+
+
+stages:
+  - build
+  - release
+  - deploy
+
+.build_template: &build_definition
+  stage: build
+  image: docker:17.06
+  services:
+    - docker:17.06-dind
+
+build_job:
+  <<: *build_definition
+  script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+    - docker build -t $CONTAINER_WEB_IMAGE web/
+    - docker push $CONTAINER_WEB_IMAGE
+
+
+release_job:
+  stage: release
+  image: docker:1.13
+  services:
+    - docker:1.13-dind
+  script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+    - docker pull $CONTAINER_WEB_IMAGE
+    - docker tag $CONTAINER_WEB_IMAGE $CONTAINER_WEB_RELEASE_IMAGE
+    - docker push $CONTAINER_WEB_RELEASE_IMAGE
+  only:
+    - master
+
+
+.deploy_template: &deploy_definition
+  stage: deploy
+  image: identt/rancher-compose:0.12.4
+  script:
+    - rancher-compose --file $DOCKER_COMPOSE --url $RANCHER_PROJECT_URL --access-key $RANCHER_ACCESS_KEY --secret-key $RANCHER_SECRET_KEY -p $RANCHER_PROJECT_NAME up -d --confirm-upgrade
+    - rancher-compose --file $DOCKER_COMPOSE --url $RANCHER_PROJECT_URL --access-key $RANCHER_ACCESS_KEY --secret-key $RANCHER_SECRET_KEY -p $RANCHER_PROJECT_NAME up -d --force-upgrade --pull $RANCHER_COMPONENTS
+
+deploy_staging_job:
+  <<: *deploy_definition
+  environment: master
+  variables:
+    RANCHER_PROJECT_URL: <RANCHER_PROJECT_URL>
+    RANCHER_ACCESS_KEY: <RANCHER_ACCESS_KEY>
+    RANCHER_SECRET_KEY: <RANCHER_SECRET_KEY>
+    DOCKER_COMPOSE: docker-compose-prod.yml
+    URL_PREFIX: ws
+    RANCHER_COMPONENTS: web
+    RANCHER_PROJECT_NAME: util-client
+  only:
+    - master

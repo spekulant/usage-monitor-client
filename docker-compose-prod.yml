@@ -1,0 +1,7 @@
+web:
+  image: registry.gitlab.com/spekulant/socketio-emitter/web:latest
+  command: "node si-wc.js"
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+  privileged: true
+  hostname: ${HOSTNAME}
